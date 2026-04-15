@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<script>
+  document.addEventListener('contextmenu', event => event.preventDefault());
+  document.onkeydown = function(e) {
+      if(e.keyCode == 123) { return false; }
+      if(e.ctrlKey && e.shiftKey && e.keyCode == 'I'.charCodeAt(0)) { return false; }
+      if(e.ctrlKey && e.shiftKey && e.keyCode == 'C'.charCodeAt(0)) { return false; }
+      if(e.ctrlKey && e.shiftKey && e.keyCode == 'J'.charCodeAt(0)) { return false; }
+      if(e.ctrlKey && e.keyCode == 'U'.charCodeAt(0)) { return false; }
+  }
+</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kon.AI - KGSS</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+    <style>
+        :root {
+            --bg-body: #f0f2f5; --bg-chat: #ffffff; --bg-window: #f9f9f9;
+            --text-main: #000000; --bot-bubble-bg: #e4e6eb; --bot-bubble-text: #000000;
+            --border-color: #ddd;
+        }
+        body.dark-mode {
+            --bg-body: #18191a; --bg-chat: #242526; --bg-window: #18191a;
+            --text-main: #e4e6eb; --bot-bubble-bg: #3a3b3c; --bot-bubble-text: #e4e6eb;
+            --border-color: #3a3b3c;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif; background-color: var(--bg-body);
+            color: var(--text-main); margin: 0; display: flex; justify-content: center;
+            align-items: center; height: 100vh; overflow: hidden; transition: 0.3s;
+        }
+        #splash-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #000; color: #fff; display: flex; justify-content: center;
+            align-items: center; z-index: 9999; font-size: 3rem; font-weight: bold;
+            animation: fadeOut 2.5s forwards; pointer-events: none;
+        }
+        @keyframes fadeOut { 0% { opacity: 1; } 70% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }
+
+        .chat-container {
+            width: 100%; max-width: 400px; height: 90vh;
+            background-color: var(--bg-chat); border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1); display: flex; flex-direction: column; overflow: hidden;
+        }
+        .chat-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 15px; text-align: center; font-size: 1.2rem; font-weight: bold; position: relative;
+        }
+        #theme-toggle, #settings-toggle {
+            position: absolute; top: 15px; background: rgba(255,255,255,0.2);
+            border: none; border-radius: 50%; width: 35px; height: 35px; cursor: pointer; color: white;
+        }
+        #theme-toggle { right: 15px; }
+        #settings-toggle { left: 15px; }
+        #chat-window { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; background-color: var(--bg-window); }
+        
+        /* MESAJ STİLLERİ GÜNCELLENDİ */
+        .message { 
+            max-width: 80%; padding: 12px 16px; border-radius: 15px; 
+            font-size: 0.95rem; line-height: 1.4; animation: popIn 0.3s ease; 
+            position: relative; /* Ses butonu için gerekli */
+        }
+        
+        @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        .bot-msg { background-color: var(--bot-bubble-bg); color: var(--bot-bubble-text); align-self: flex-start; border-bottom-left-radius: 2px; padding-right: 35px; }
+        .user-msg { background-color: #0084ff; color: white; align-self: flex-end; border-bottom-right-radius: 2px; }
+        
+        /* SES BUTONU STİLİ */
+        .tts-btn {
+            position: absolute; top: 5px; right: 8px; background: none; border: none;
+            cursor: pointer; font-size: 1.1rem; opacity: 0.5; transition: 0.2s; padding: 0;
+        }
+        .tts-btn:hover { opacity: 1; transform: scale(1.1); }
+
+        .input-area { padding: 15px; background-color: var(--bg-chat); border-top: 1px solid var(--border-color); display: flex; gap: 10px; }
+        input[type="text"] { flex: 1; padding: 12px; border: 1px solid var(--border-color); border-radius: 25px; outline: none; background-color: var(--bg-body); color: var(--text-main); }
+        .send-btn { background-color: #764ba2; color: white; border: none; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold; }
+
+        #payment-modal, #settings-modal {
+            display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8); z-index: 10000; justify-content: center; align-items: center;
+        }
+        .modal-card {
+            background: var(--bg-chat); padding: 25px; border-radius: 20px; width: 85%; max-width: 350px;
+            text-align: center; color: var(--text-main); border: 1px solid var(--border-color);
+        }
+        .package-box {
+            border: 2px solid #764ba2; padding: 15px; margin: 10px 0; border-radius: 12px; cursor: pointer;
+            transition: 0.3s; font-weight: bold;
+        }
+        .package-box:hover { background: #764ba2; color: white; }
+        .iban-box {
+            background: var(--bg-body); padding: 10px; border-radius: 8px; font-size: 0.85rem;
+            word-break: break-all; margin: 15px 0; border: 1px dashed #764ba2; text-align: left;
+        }
+        .admin-btn { background: #e74c3c; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; margin-top: 5px; font-weight: bold; width: 100%; }
+        
+        #user-bio {
+            width: 100%; height: 100px; border-radius: 10px; border: 1px solid var(--border-color);
+            background: var(--bg-body); color: var(--text-main); padding: 10px; box-sizing: border-box;
+            resize: none; font-family: inherit; margin-top: 10px;
+        }
+
+@media (min-width: 768px) {
+    .chat-container {
+        max-width: 100% !important; 
+        width: 100% !important;      
+        height: 100vh !important;    
+        border-radius: 0;            
+    }
+    .message { max-index: 60%; }
+    .input-area { padding: 20px 10% !important; }
+    #chat-window { padding: 30px 10% !important; }
+}
+    </style>
+</head>
+<body>
+
+    <div id="splash-screen">Kon.AI</div>
+
+    <div id="settings-modal">
+        <div class="modal-card">
+            <h3 style="margin-top: 0; color: #764ba2;">⚙️ Kişiselleştirme</h3>
+            <p style="font-size: 0.8rem;">Kon.AI'ın seni tanıması için kendinden bahset</p>
+            <textarea id="user-bio" placeholder="Örnek: Adım Ahmet, futbol oynamayı seviyorum..."></textarea>
+            <button style="background: #764ba2; color: white; border: none; padding: 12px; width: 100%; border-radius: 10px; cursor: pointer; font-weight: bold; margin-top: 15px;" onclick="saveSettings()">Kaydet ve Kapat</button>
+        </div>
+    </div>
+
+    <div id="payment-modal">
+        <div class="modal-card">
+            <h3 style="margin-top: 0; color: #764ba2;">🪙 Paket Seçimi</h3>
+            <p style="font-size: 0.8rem;">İhtiyacınıza uygun planı seçin</p>
+            
+            <div id="package-selection">
+                <div class="package-box" onclick="showIban('Plus', 99)">
+                    Kon.AI Plus <br> <span style="color: #27ae60;">99 TL / Aylık</span>
+                </div>
+                <div class="package-box" onclick="showIban('Basic', 49)">
+                    Kon.AI Basic <br> <span style="color: #27ae60;">49 TL / Aylık</span>
+                </div>
+                <button style="background: #eee; border: none; color: black; padding: 10px; width: 100%; border-radius: 10px; cursor: pointer; margin-top: 5px;" onclick="closePayment()">Vazgeç</button>
+            </div>
+
+            <div id="iban-details" style="display:none;">
+                <p style="font-weight: bold;">Ödeme Bilgileri</p>
+                <div class="iban-box">
+                    <b>Alıcı:</b> Anıl Demirel <br>
+                    <b>IBAN:</b> TR 5100 0100 9010 70376070 5001<br>
+                    <b>Açıklama:</b> <span id="ref-code" style="color:red; font-weight:bold; font-size: 1.1rem;"></span>
+                </div>
+                <p style="font-size: 0.75rem; color: #666; margin-top: 10px;">* Güvenlik kodunu banka uygulamasında <b>Açıklama</b> kısmına yazmayı unutma.</p>
+                <button style="background: #27ae60; color: white; border: none; padding: 12px; width: 100%; border-radius: 10px; cursor: pointer; font-weight: bold;" onclick="confirmPayment()">✅ Ödemeyi Yaptım</button>
+                <button style="background: transparent; color: #777; border: none; width: 100%; margin-top: 10px; cursor: pointer;" onclick="openPayment()">⬅ Geri Dön</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="chat-container">
+        <div class="chat-header">
+            <button id="settings-toggle" onclick="openSettings()">⚙️</button>
+            <span id="header-title">Kon.AI Free</span>
+            <button id="theme-toggle" onclick="toggleTheme()">🌙</button>
+            <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 5px;">
+                <div id="coin-counter" style="font-size: 0.8rem; color: #ffd700;">Kalan Coin: 5</div>
+                <button id="buy-btn" onclick="openPayment()" style="background: #ffd700; color: #000; border: none; border-radius: 5px; padding: 2px 8px; font-weight: bold; cursor: pointer; font-size: 0.8rem;">+ AL</button>
+            </div>
+        </div>
+        <div id="chat-window">
+            <div class="message bot-msg">
+                <button class="tts-btn" onclick="speakText(this.parentElement.innerText)">🔊</button>
+                Selam! Ben Kon.AI. 👋<br>
+                Bugün sana nasıl yardımcı olabilirim?
+            </div>
+        </div>
+        <div id="typing" style="display:none; font-size: 0.8rem; padding: 5px 20px; color: #888;">Kon.AI düşünüyor...</div>
+        <div class="input-area">
+            <input type="text" id="user-input" placeholder="Bir şeyler yaz veya video ara..." autocomplete="off">
+            <button class="send-btn" onclick="sendMessage()">Gönder</button>
+        </div>
+    </div>
+
+ <script>
+    /* Copyright (c) 2026 by Kaan Özkan (Kaningo Games Software Studio). All rights reserved. */
+
+    // --- 🛠️ SİSTEM AYARLARI (BAKIM MODU) 🛠️ ---
+    const BAKIM_MODU = false; // Siteyi kapatmak için 'true', açmak için 'false' yap.
+
+    function checkMaintenance() {
+        if (BAKIM_MODU) {
+            document.body.innerHTML = `
+                <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100vh; background:#18191a; color:white; text-align:center; font-family:sans-serif;">
+                    <h1 style="font-size:3rem; margin-bottom: 10px;">🛠️ Kon.AI Bakımda</h1>
+                    <p style="font-size:1.2rem; color:#aaa; max-width: 80%;">Daha güvenli ve güçlü bir altyapı için kısa bir mola verdik. Yakında görüşmek üzere!</p>
+                    <div style="margin-top:30px; padding:10px 20px; border:1px solid #764ba2; border-radius:10px; color: #fff; background: rgba(118, 75, 162, 0.2);">
+                        <b>Kaningo Games Software Studio</b>
+                    </div>
+                </div>
+            `;
+            // Sayfanın geri kalanındaki JS kodlarının çalışmasını durdurur (API isteklerini engeller)
+            throw new Error("Sistem Bakım Modunda: Script çalışması durduruldu.");
+        }
+    }
+
+    // Sayfa açılır açılmaz ilk iş bakım modunu kontrol et
+    checkMaintenance();
+
+    // --- FIREBASE BAŞLATMA ---
+    const firebaseConfig = {
+      apiKey: "AIzaSyDXF9THUQ3h8myb1Poh1T8qVg6h2HWSr1Y",
+      authDomain: "konai-db.firebaseapp.com",
+      databaseURL: "https://konai-db-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "konai-db",
+      storageBucket: "konai-db.firebasestorage.app",
+      messagingSenderId: "766402866869",
+      appId: "1:766402866869:web:0838f12b439dcecc42d8fc"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    let deviceId = localStorage.getItem('konai_device_id');
+    if (!deviceId) {
+        deviceId = 'user_' + Math.floor(Math.random() * 1000000000);
+        localStorage.setItem('konai_device_id', deviceId);
+    }
+
+    const chatWindow = document.getElementById('chat-window');
+    const userInput = document.getElementById('user-input');
+    const coinCounter = document.getElementById('coin-counter');
+    const headerTitle = document.getElementById('header-title');
+    const buyBtn = document.getElementById('buy-btn');
+    const userBioInput = document.getElementById('user-bio');
+    
+    const MAX_FREE_COINS = 5;
+    let coins = 0; 
+    let selectedPackage = ""; 
+
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+  // --- SESLİ OKUMA FONKSİYONU ---
+    function speakText(text) {
+        window.speechSynthesis.cancel();
+        
+        let cleanText = text.replace(/🔊/g, '').replace(/<[^>]*>?/gm, '');
+        cleanText = cleanText.replace(/\bKGSS\b/g, 'Kaningo Games Software Studio');
+        cleanText = cleanText.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDC00-\uDFFF])/g, '').trim();
+        
+        if (cleanText.length > 0) {
+            const utterance = new SpeechSynthesisUtterance(cleanText);
+            utterance.lang = 'tr-TR';
+            utterance.rate = 1.0;
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    database.ref('users/' + deviceId).on('value', (snapshot) => {
+        const userData = snapshot.val();
+        if (userData) {
+            const dbPlan = userData.plan || "Free";
+            const localPlan = localStorage.getItem('konai_active_plan') || "Free";
+
+            if (dbPlan !== "Free" && dbPlan !== localPlan) {
+                localStorage.setItem('konai_active_plan', dbPlan);
+                if (userData.plan_expiry) {
+                    localStorage.setItem('konai_plan_expiry', userData.plan_expiry);
+                }
+                
+                if (dbPlan === 'Plus') {
+                    coins = "200"; 
+                    headerTitle.innerText = "Kon.AI Plus ✨";
+                    buyBtn.style.display = "none";
+                } else if (dbPlan === 'Basic') {
+                    coins = 80; 
+                    headerTitle.innerText = "Kon.AI Basic";
+                    buyBtn.style.display = "none";
+                }
+                updateCoinsDisplay();
+                addMsg(`🎉 <b>Müjde!</b> Ödemeniz onaylandı. <b>${dbPlan}</b> paketiniz anında aktif edildi! İyi kullanımlar.`, 'bot-msg');
+            } else if (dbPlan === "Free" && localPlan !== "Free") {
+                localStorage.removeItem('konai_active_plan');
+                localStorage.removeItem('konai_plan_expiry');
+                addMsg("Abonelik süreniz doldu veya iptal edildi. Free versiyona geçirildiniz.", "bot-msg");
+                setTimeout(() => location.reload(), 3000); // 3 saniye sonra yenile
+            }
+        }
+    });
+
+   function initializeSystem() {
+        checkSubscription();
+        const savedBio = localStorage.getItem('konai_user_bio');
+        if(savedBio) userBioInput.value = savedBio;
+
+        const activePlan = localStorage.getItem('konai_active_plan');
+        const now = new Date();
+        const today = now.toDateString(); 
+        const lastReset = localStorage.getItem('konai_last_reset');
+        let savedCoins = localStorage.getItem('remainingCoins');
+
+        if (activePlan === 'Plus') {
+            coins = (savedCoins !== null) ? savedCoins : "200"; 
+            headerTitle.innerText = "Kon.AI Plus ✨";
+            buyBtn.style.display = "none";
+        } else if (activePlan === 'Basic') {
+            coins = (savedCoins !== null) ? parseInt(savedCoins) : 80;
+            headerTitle.innerText = "Kon.AI Basic";
+            buyBtn.style.display = "none";
+        } else {
+            if (lastReset !== today) {
+                localStorage.setItem('konai_last_reset', today);
+                localStorage.setItem('remainingCoins', MAX_FREE_COINS);
+                coins = MAX_FREE_COINS;
+            } else {
+                let currentFreeCoins = parseInt(savedCoins);
+                coins = (isNaN(currentFreeCoins) || currentFreeCoins > MAX_FREE_COINS) ? 0 : (currentFreeCoins < 0 ? 0 : currentFreeCoins);
+            }
+        }
+        updateCoinsDisplay();
+
+        database.ref('users/' + deviceId).update({ last_login: today });
+        database.ref('users/' + deviceId).once('value', (snapshot) => {
+            if(!snapshot.hasChild('plan')) {
+                database.ref('users/' + deviceId).update({ plan: "Free" });
+            }
+        });
+    }
+
+    function checkSubscription() {
+        const expiry = localStorage.getItem('konai_plan_expiry');
+        if (expiry && Date.now() > parseInt(expiry)) {
+            localStorage.removeItem('konai_active_plan');
+            localStorage.removeItem('konai_plan_expiry');
+            database.ref('users/' + deviceId).update({ plan: "Free" });
+        }
+    }
+
+    function updateCoinsDisplay() {
+        coinCounter.textContent = `🪙 Kalan: ${coins}`;
+        if(coins !== "♾️") {
+            localStorage.setItem('remainingCoins', coins);
+            database.ref('users/' + deviceId).update({ coins: coins });
+        }
+    }
+
+    function openSettings() { document.getElementById('settings-modal').style.display = 'flex'; }
+
+    function saveSettings() {
+        const bio = userBioInput.value;
+        localStorage.setItem('konai_user_bio', bio);
+        database.ref('users/' + deviceId).update({ bio: bio });
+        document.getElementById('settings-modal').style.display = 'none';
+        addMsg("<b>Sistem:</b> Kişisel bilgilerin kaydedildi. Artık seni daha iyi tanıyorum! 😊", "bot-msg");
+    }
+
+    function toggleTheme() {
+        document.body.classList.toggle('dark-mode');
+        const isDark = document.body.classList.contains('dark-mode');
+        localStorage.setItem('konai_theme', isDark ? 'dark' : 'light');
+        document.getElementById('theme-toggle').textContent = isDark ? '☀️' : '🌙';
+    }
+
+    if (localStorage.getItem('konai_theme') === 'dark') {
+        document.body.classList.add('dark-mode');
+        document.getElementById('theme-toggle').textContent = '☀️';
+    }
+
+    function addMsg(text, cls) {
+        const d = document.createElement('div');
+        d.className = `message ${cls}`;
+        
+        if (cls === 'bot-msg') {
+            const ttsBtn = document.createElement('button');
+            ttsBtn.className = 'tts-btn';
+            ttsBtn.innerHTML = '🔊';
+            ttsBtn.title = "Sesli Oku";
+            ttsBtn.onclick = function() {
+                speakText(text);
+            };
+            d.appendChild(ttsBtn);
+        }
+
+        const span = document.createElement('span');
+        span.innerHTML = text;
+        d.appendChild(span);
+
+        chatWindow.appendChild(d);
+        chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    function openPayment() {
+        document.getElementById('payment-modal').style.display = 'flex';
+        document.getElementById('package-selection').style.display = 'block';
+        document.getElementById('iban-details').style.display = 'none';
+    }
+
+    function closePayment() { document.getElementById('payment-modal').style.display = 'none'; }
+
+    function showIban(packageName, price) {
+        selectedPackage = packageName;
+        const ref = "KON" + Math.floor(1000 + Math.random() * 9000);
+        document.getElementById('ref-code').innerText = ref;
+        document.getElementById('package-selection').style.display = 'none';
+        document.getElementById('iban-details').style.display = 'block';
+    }
+
+    function confirmPayment() {
+        const userRef = document.getElementById('ref-code').innerText;
+        database.ref('admin/pending_payments/' + deviceId).set({
+            code: userRef, plan: selectedPackage, timestamp: Date.now()
+        });
+        addMsg(`<b>Ödeme Bildirimi Alındı!</b><br>Referans Kodunuz: <b>${userRef}</b><br><br>Dekontu ilettiğinizde sistem onayı sağlanacaktır. ✨`, 'bot-msg');
+        closePayment();
+    }
+
+    function checkAdminCommand(text) {
+        if (text === "/admin") {
+            database.ref('admin/pending_payments').once('value').then((snapshot) => {
+                const pendingData = snapshot.val();
+                if (pendingData) {
+                    let adminPanelHTML = `<b>🛡️ Kaningo Admin Paneli</b><br><br>`;
+                    for (let uid in pendingData) {
+                        let request = pendingData[uid];
+                        adminPanelHTML += `
+                            <div style="background: var(--bg-body); padding: 10px; border-radius: 8px; margin-bottom: 10px; border: 1px dashed #764ba2;">
+                                <b style="font-size:0.8rem;">Cihaz ID:</b> <span style="font-size:0.7rem;">${uid}</span><br>
+                                <b>Paket:</b> ${request.plan}<br>
+                                <b>Kod:</b> <span style="color:red;">${request.code}</span><br>
+                                <button class="admin-btn" onclick="approveDbSubscription('${uid}', '${request.plan}')">Onayla</button>
+                            </div>
+                        `;
+                    }
+                    addMsg(adminPanelHTML, 'bot-msg');
+                } else {
+                    addMsg("<b>🛡️ Admin:</b> Veritabanında bekleyen ödeme onayı yok.", 'bot-msg');
+                }
+            });
+            return true; 
+        }
+        return false;
+    }
+
+    window.approveDbSubscription = function(uid, plan) {
+        const now = new Date();
+        const expiryDate = new Date(now.setMonth(now.getMonth() + 1)).getTime();
+        database.ref('users/' + uid).update({ plan: plan, plan_expiry: expiryDate });
+        database.ref('admin/pending_payments/' + uid).remove();
+        addMsg(`✅ <b>Onay Başarılı!</b><br>Kullanıcının veritabanı anında güncellendi.`, 'bot-msg');
+    }
+
+    async function getResponse(text) {
+        if (text.toLowerCase().includes("youtube") || text.toLowerCase().includes("video")) {
+            const query = text.replace(/youtube|video|izle|ara|bul/gi, "").trim();
+            return `Senin için YouTube'da <b>"${query}"</b> araması yaptım: <br> <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(query)}" target="_blank" style="color: #ff0000; font-weight: bold;">▶️ Videoyu İzle</a>`;
+        }
+
+        const userBio = localStorage.getItem('konai_user_bio') || "Henüz bilgi girilmedi.";
+
+        try {
+            const response = await fetch(GEMINI_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{ 
+                            text: `Kon.AI isminde, Kaningo Games Software Studio tarafından geliştirilen bir yapay zekasın. Kurucun Kaan Özkan'dır. 
+                            Kullanıcı hakkında ek bilgi: ${userBio}. 
+                            Kullanıcı mesajı: ${text}` 
+                        }]
+                    }]
+                })
+            });
+            const data = await response.json();
+            return data.candidates[0].content.parts[0].text.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        } catch (error) {
+            return "Sistemsel bir bağlantı hatası oluştu biraz sonra tekrar dene!.";
+        }
+    }
+
+    async function sendMessage() {
+        const text = userInput.value.trim();
+        if (!text) return;
+        if (checkAdminCommand(text)) { userInput.value = ''; return; }
+        if (localStorage.getItem('konai_last_reset') !== new Date().toDateString()) { initializeSystem(); }
+
+        if (coins !== "♾️" && coins <= 0) { 
+            addMsg("Bugünlük coin limitin doldu! Sohbet etmeye devam etmek için paket alabilirsin.", 'bot-msg'); 
+            openPayment();
+            return; 
+        }
+
+        addMsg(text, 'user-msg');
+        userInput.value = '';
+        if(coins !== "♾️") { coins--; updateCoinsDisplay(); }
+
+        document.getElementById('typing').style.display = 'block';
+        const resp = await getResponse(text);
+        document.getElementById('typing').style.display = 'none';
+        addMsg(resp, 'bot-msg');
+    }
+
+    initializeSystem();
+    userInput.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
+</script>
+</body>
+</html>
